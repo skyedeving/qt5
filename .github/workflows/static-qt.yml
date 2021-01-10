@@ -1,0 +1,93 @@
+name: static-build
+
+on:
+  push:
+    branches:
+    - 5.15.2-github
+
+jobs:
+  linux:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install Dependencies
+      run: |
+        sudo apt update && sudo apt-get install libgl1-mesa-dev
+    - name: Build Qt
+      run: |
+        # Clone
+        ./init-repository -f --module-subset=qtbase
+        cd .. && mkdir build && cd build
+        # Configure Qt5
+        ../qt5/configure -static -release -prefix "../qt5_binaries" -skip webengine -nomake tools -nomake tests -nomake examples -no-dbus -no-ssl -no-pch -opensource -confirm-license -bundled-xcb-xinput -qt-libpng -qt-pcre
+        # Make
+        make module-qtbase -j4
+        make install -j4
+    - name: Package binaries
+      run: tar czvf qt5-5.15.2-linux-x86_64-static.tar.gz ../qt5_binaries
+    - uses: actions/upload-artifact@v1
+      with:
+        name: qt5-5.15.2-linux-x86_64-static.tar.gz
+        path: qt5-5.15.2-linux-x86_64-static.tar.gz
+  osx:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Compile static Qt version
+      run: |
+        # Clone Qt5 repo
+        ./init-repository -f --module-subset=qtbase
+        # Create build folder
+        cd .. && mkdir build && cd build
+        # Configure Qt5
+        ../qt5/configure -static -release -prefix "../qt5_binaries" -skip webengine -nomake tools -nomake tests -nomake examples -no-dbus -no-ssl -no-pch -opensource -confirm-license
+        make module-qtbase -j4
+        make install -j4
+    - name: Package binaries
+      run: tar czvf qt5-5.15.2-osx-x86_64-static.tar.gz ../qt5_binaries
+    - uses: actions/upload-artifact@v1
+      with:
+        name: qt5-5.15.2-osx-x86_64-static.tar.gz
+        path: qt5-5.15.2-osx-x86_64-static.tar.gz
+
+  windows:
+    runs-on: windows-2019
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install Python 3.7 version
+      uses: actions/setup-python@v1
+      with:
+        python-version: '3.7'
+        architecture: 'x64'
+    - name: Install jom
+      run: |
+        Invoke-WebRequest https://www.dropbox.com/s/dku543gtw7ik7hr/jom.zip?dl=1 -OutFile .\jom.zip
+        expand-archive -path "jom.zip"
+        echo "D:\a\qt5\qt5\jom" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+    - name: Compile static Qt version
+      run: |
+        # Clone Qt5 repo
+        perl init-repository -f --module-subset=qtbase
+        # Create build folder
+        cd .. && mkdir build && cd build
+        # Setup the compiler
+        cmd.exe /c "call `"C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat`" && set > %temp%\vcvars.txt"
+        Get-Content "$env:temp\vcvars.txt" | Foreach-Object { if ($_ -match "^(.*?)=(.*)$") { Set-Content "env:\$($matches[1])" $matches[2] } }
+        # Configure Qt5
+        ..\qt5\configure.bat -release -static -no-pch -optimize-size -opengl desktop -platform win32-msvc -prefix "..\qt5_binaries" -skip webengine -nomake tools -nomake tests -nomake examples -opensource -confirm-license
+        jom -j4
+        nmake install
+    - name: Package binaries
+      run: |
+        # Create archive of the pre-built Qt binaries
+        7z a qt5-5.15.2-windows-x86_64-static.zip ..\qt5_binaries
+    - uses: actions/upload-artifact@v1
+      with:
+        name: qt5-5.15.2-windows-x86_64-static.zip
+        path: qt5-5.15.2-windows-x86_64-static.zip
